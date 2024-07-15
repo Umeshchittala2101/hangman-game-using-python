@@ -1,0 +1,81 @@
+import sqlite3
+from alpha_vantage.timeseries import TimeSeries
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# API key for Alpha Vantage
+ALPHA_VANTAGE_API_KEY = 'YOUR_API_KEY'
+
+# Initialize Alpha Vantage API
+av_api = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format='pandas')
+
+# SQLite database connection
+conn = sqlite3.connect('stock_portfolio.db')
+c = conn.cursor()
+
+# Create table if not exists
+c.execute('''CREATE TABLE IF NOT EXISTS portfolio
+             (symbol TEXT PRIMARY KEY, shares INTEGER)''')
+conn.commit()
+
+def add_stock(symbol, shares):
+    c.execute("INSERT OR REPLACE INTO portfolio (symbol, shares) VALUES (?, ?)", (symbol, shares))
+    conn.commit()
+    print(f"{shares} shares of {symbol} added to portfolio.")
+
+def remove_stock(symbol):
+    c.execute("DELETE FROM portfolio WHERE symbol=?", (symbol,))
+    conn.commit()
+    print(f"{symbol} removed from portfolio.")
+
+def get_latest_price(symbol, retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            data, meta_data = av_api.get_quote_endpoint(symbol=symbol)
+            latest_price = float(data['05. price'].iloc[0])
+            return latest_price
+        except Exception as e:
+            logging.error(f"Attempt {attempt+1}: Failed to get latest price for {symbol}: {e}")
+            time.sleep(delay)
+    return None
+
+def track_portfolio():
+    c.execute("SELECT * FROM portfolio")
+    rows = c.fetchall()
+    total_value = 0
+    for row in rows:
+        symbol = row[0]
+        shares = row[1]
+        latest_price = get_latest_price(symbol)
+        if latest_price is not None:
+            total_value += latest_price * shares
+            print(f"{symbol}: {shares} shares, Latest Price: ${latest_price:.2f}")
+        else:
+            print(f"Failed to get latest price for {symbol}")
+
+    print(f"Total Portfolio Value: ${total_value:.2f}")
+
+def main():
+    while True:
+        print("\n1. Add Stock\n2. Remove Stock\n3. Track Portfolio\n4. Exit")
+        choice = input("Enter your choice: ")
+        if choice == '1':
+            symbol = input("Enter stock symbol: ").upper()
+            shares = int(input("Enter number of shares: "))
+            add_stock(symbol, shares)
+        elif choice == '2':
+            symbol = input("Enter stock symbol to remove: ").upper()
+            remove_stock(symbol)
+        elif choice == '3':
+            track_portfolio()
+        elif choice == '4':
+            print("Exiting...")
+            break
+        else:
+            print("Invalid choice, please try again.")
+
+if __name__ == "__main__":
+    main()
+
